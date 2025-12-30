@@ -1,3 +1,3 @@
 # Git Repository
 
-Repo URL: [TODO: Add Repo URL Here]
+Repo URL: https://github.com/alazndy/tmrtkp.git
