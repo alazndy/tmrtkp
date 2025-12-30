@@ -50,6 +50,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
         translatedError = 'Bu email ile kayıtlı kullanıcı bulunamadı';
       } else if (errorMessage.includes('too-many-requests')) {
         translatedError = 'Çok fazla deneme yapıldı. Lütfen daha sonra tekrar deneyin';
+      } else if (errorMessage.includes('unauthorized-domain')) {
+        translatedError = 'Bu alan adı (domain) yetkisiz. Lütfen Firebase konsolundan ekleyin.';
+      } else if (errorMessage.includes('popup-closed-by-user')) {
+        translatedError = 'Giriş penceresi kapatıldı.';
       }
       set({ error: translatedError, loading: false });
       throw new Error(translatedError);
@@ -63,8 +67,16 @@ export const useAuthStore = create<AuthState>()((set) => ({
       set({ user: mapFirebaseUser(userCredential.user), loading: false });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Google ile giriş başarısız';
-      set({ error: errorMessage, loading: false });
-      throw new Error(errorMessage);
+      let translatedError = errorMessage;
+      
+      if (errorMessage.includes('popup-closed-by-user')) {
+        translatedError = 'Giriş penceresi kapatıldı.';
+      } else if (errorMessage.includes('unauthorized-domain')) {
+        translatedError = 'Bu alan adı (domain) yetkisiz. Lütfen Firebase konsolundan ekleyin.';
+      }
+      
+      set({ error: translatedError, loading: false });
+      throw new Error(translatedError);
     }
   },
 
