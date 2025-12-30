@@ -1,9 +1,10 @@
 'use client';
 
 import { create } from 'zustand';
-import { auth } from './firebase';
+import { auth, googleProvider } from './firebase';
 import { 
   signInWithEmailAndPassword, 
+  signInWithPopup,
   signOut, 
   onAuthStateChanged,
   User as FirebaseUser 
@@ -17,6 +18,7 @@ interface AuthState {
   
   // Actions
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   initAuth: () => () => void; // Returns unsubscribe function
   clearError: () => void;
@@ -51,6 +53,18 @@ export const useAuthStore = create<AuthState>()((set) => ({
       }
       set({ error: translatedError, loading: false });
       throw new Error(translatedError);
+    }
+  },
+
+  loginWithGoogle: async () => {
+    set({ loading: true, error: null });
+    try {
+      const userCredential = await signInWithPopup(auth, googleProvider);
+      set({ user: mapFirebaseUser(userCredential.user), loading: false });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Google ile giriş başarısız';
+      set({ error: errorMessage, loading: false });
+      throw new Error(errorMessage);
     }
   },
 
