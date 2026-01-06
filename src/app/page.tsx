@@ -1,153 +1,150 @@
 'use client';
 
+import { useEffect, useMemo } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { usePaymentStore } from '@/lib/payment-store';
+import { useAuthStore } from '@/lib/auth-store';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
-import { tr } from 'date-fns/locale';
-import { AlertTriangle, Users, BookOpen, GraduationCap, Clock, Plus } from 'lucide-react';
+import { Users, GraduationCap, Clock, AlertTriangle, Plus, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
+import {
+  DashboardStatsCards,
+  FinancialOverview,
+  ExpiringEnrollmentsAlert,
+  QuickActions,
+} from './_components';
+
 export default function DashboardPage() {
-  const { students, courses, enrollments, getEnrollmentsWithDetails, getExpiringEnrollments } = useAppStore();
-  
+  const { students, courses, attendance, getEnrollmentsWithDetails, getExpiringEnrollments } =
+    useAppStore();
+  const {
+    payments,
+    initialize: initPayments,
+    getOverduePayments,
+    getPendingPayments,
+  } = usePaymentStore();
+  const { user, isAdmin } = useAuthStore();
+
+  // Initialize payment store
+  useEffect(() => {
+    if (user?.institutionId) {
+      initPayments(user.institutionId);
+    }
+  }, [user?.institutionId, initPayments]);
+
+  // Enrollment data
   const allEnrollments = getEnrollmentsWithDetails();
   const activeEnrollments = allEnrollments.filter((e) => e.status === 'active');
   const expiringEnrollments = getExpiringEnrollments(7);
   const expiredEnrollments = allEnrollments.filter((e) => e.status === 'expired');
 
+  // Payment stats
+  const paymentStats = useMemo(() => {
+    const overdue = getOverduePayments();
+    const pending = getPendingPayments();
+    const paid = payments.filter((p) => p.status === 'paid');
+    return {
+      overdueCount: overdue.length,
+      overdueAmount: overdue.reduce((sum, p) => sum + p.amount, 0),
+      pendingCount: pending.length,
+      pendingAmount: pending.reduce((sum, p) => sum + p.amount, 0),
+      totalRevenue: paid.reduce((sum, p) => sum + p.amount, 0),
+    };
+  }, [payments, getOverduePayments, getPendingPayments]);
+
+  // Attendance stats (last 30 days)
+  const attendanceStats = useMemo(() => {
+    const last30Days = new Date();
+    last30Days.setDate(last30Days.getDate() - 30);
+
+    const recentAttendance = attendance.filter((a) => a.date >= last30Days);
+    let totalPresent = 0;
+    let totalRecords = 0;
+
+    recentAttendance.forEach((a) => {
+      a.records.forEach((r) => {
+        totalRecords++;
+        if (r.status === 'present') totalPresent++;
+      });
+    });
+
+    return {
+      attendanceRate: totalRecords > 0 ? Math.round((totalPresent / totalRecords) * 100) : 0,
+      totalSessions: recentAttendance.length,
+    };
+  }, [attendance]);
+
+  // Stats for main cards
+  const stats = [
+    {
+      title: 'Toplam Öğrenci',
+      value: students.length,
+      icon: Users,
+      color: 'from-violet-500 to-purple-600',
+      bgColor: 'bg-violet-500/10',
+    },
+    {
+      title: 'Aktif Kayıtlar',
+      value: activeEnrollments.length,
+      icon: GraduationCap,
+      color: 'from-emerald-500 to-teal-600',
+      bgColor: 'bg-emerald-500/10',
+    },
+    {
+      title: 'Biten Yaklaşan',
+      value: expiringEnrollments.length,
+      icon: Clock,
+      color: 'from-amber-500 to-orange-600',
+      bgColor: 'bg-amber-500/10',
+      alert: expiringEnrollments.length > 0,
+    },
+    {
+      title: 'Süresi Dolmuş',
+      value: expiredEnrollments.length,
+      icon: AlertTriangle,
+      color: 'from-rose-500 to-red-600',
+      bgColor: 'bg-rose-500/10',
+      alert: expiredEnrollments.length > 0,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Cisem Dil Kursu Öğrenci Takip Sistemi</p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/25">
+              <Sparkles className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+              <p className="text-muted-foreground">Cisem Dil Kursu Öğrenci Takip Sistemi</p>
+            </div>
+          </div>
         </div>
         <Link href="/students/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
+          <Button className="gap-2 shadow-lg shadow-primary/25">
+            <Plus className="h-4 w-4" />
             Yeni Öğrenci
           </Button>
         </Link>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Toplam Öğrenci</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{students.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Aktif Kayıtlar</CardTitle>
-            <GraduationCap className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeEnrollments.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Biten Yaklaşan</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{expiringEnrollments.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Süresi Dolmuş</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{expiredEnrollments.length}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <DashboardStatsCards stats={stats} />
 
-      {/* Expiring Soon Alert */}
-      {expiringEnrollments.length > 0 && (
-        <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
-              <AlertTriangle className="h-5 w-5" />
-              Kurs Bitişi Yaklaşan Öğrenciler
-            </CardTitle>
-            <CardDescription>Bu öğrencilerin kursları 7 gün içinde bitiyor</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {expiringEnrollments.map((enrollment) => (
-                <div
-                  key={enrollment.id}
-                  className="flex items-center justify-between rounded-lg border bg-background p-3"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {enrollment.student.firstName} {enrollment.student.lastName}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{enrollment.course.name}</p>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant={enrollment.daysRemaining <= 3 ? 'destructive' : 'secondary'}>
-                      {enrollment.daysRemaining} gün kaldı
-                    </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Bitiş: {format(enrollment.endDate, 'd MMMM yyyy', { locale: tr })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Financial & Attendance Overview (Admin only) */}
+      {isAdmin() && (
+        <FinancialOverview paymentStats={paymentStats} attendanceStats={attendanceStats} />
       )}
 
-      {/* Quick Actions */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Hızlı İşlemler</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            <Link href="/students/new">
-              <Button variant="outline" className="w-full justify-start">
-                <Plus className="mr-2 h-4 w-4" />
-                Yeni Öğrenci Ekle
-              </Button>
-            </Link>
-            <Link href="/enrollments/new">
-              <Button variant="outline" className="w-full justify-start">
-                <GraduationCap className="mr-2 h-4 w-4" />
-                Kursa Kayıt Yap
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
+      {/* Expiring Enrollments Alert */}
+      <ExpiringEnrollmentsAlert enrollments={expiringEnrollments} />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Kurslar</CardTitle>
-            <CardDescription>{courses.length} adet kurs mevcut</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {courses.map((course) => (
-                <Badge key={course.id} variant="secondary">
-                  {course.name}
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Quick Actions */}
+      <QuickActions isAdmin={isAdmin()} courses={courses} />
     </div>
   );
 }

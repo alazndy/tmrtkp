@@ -1,0 +1,153 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ============================================
+    // Helper Functions
+    // ============================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isInstitutionMember(instId) {
+      return isSignedIn() && getUserData().institutionId == instId;
+    }
+    
+    function isFounder(instId) {
+      return isSignedIn() && get(/databases/$(database)/documents/institutions/$(instId)).data.founderId == request.auth.uid;
+    }
+    
+    // Role-based access: Admin check
+    function isAdmin(instId) {
+      return isInstitutionMember(instId) && getUserData().role == 'admin';
+    }
+
+    // ============================================
+    // Users Collection
+    // ============================================
+    // Users can read their own profile.
+    // Members of an institution can read other members of the SAME institution.
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || resource.data.institutionId == getUserData().institutionId);
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ============================================
+    // Institutions Collection
+    // ============================================
+    // Create: Any auth user can create an institution (onboarding).
+    // Read: Only members.
+    // Update: Only founder.
+    // Delete: Only founder.
+    match /institutions/{instId} {
+      allow create: if isSignedIn();
+      allow read: if isInstitutionMember(instId);
+      allow update, delete: if isFounder(instId);
+    }
+
+    // ============================================
+    // Invites Collection
+    // ============================================
+    // Read (get): Public (link sharing) - token must be guessed (UUID)
+    // List: Institution members only
+    // Create: Institution Admins
+    // Update/Delete: Institution Admins or the user who used the invite
+    match /invites/{token} {
+      allow get: if true; // Public can validate token
+      allow list: if isSignedIn() && resource.data.institutionId == getUserData().institutionId;
+      allow create: if isAdmin(request.resource.data.institutionId);
+      allow update, delete: if isSignedIn() && (
+        isAdmin(resource.data.institutionId) || 
+        resource.data.usedBy == request.auth.uid
+      );
+    }
+
+    // ============================================
+    // Domain Collections
+    // STRICT ISOLATION: Must belong to user's institution
+    // ============================================
+    
+    // Students
+    match /students/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isInstitutionMember(request.resource.data.institutionId);
+      allow update: if isInstitutionMember(resource.data.institutionId);
+      allow delete: if isAdmin(resource.data.institutionId); // Only admin can delete
+    }
+    
+    // Courses
+    match /courses/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isAdmin(request.resource.data.institutionId); // Only admin can create
+      allow update: if isAdmin(resource.data.institutionId);
+      allow delete: if isAdmin(resource.data.institutionId);
+    }
+    
+    // Enrollments
+    match /enrollments/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isInstitutionMember(request.resource.data.institutionId);
+      allow update: if isInstitutionMember(resource.data.institutionId);
+      allow delete: if isAdmin(resource.data.institutionId);
+    }
+    
+    // Attendance
+    match /attendance/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isInstitutionMember(request.resource.data.institutionId);
+      allow update: if isInstitutionMember(resource.data.institutionId);
+      allow delete: if isAdmin(resource.data.institutionId);
+    }
+    
+    // ============================================
+    // Notifications
+    // ============================================
+    match /notifications/{docId} {
+      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // Payments - Admin only for write
+    // ============================================
+    match /payments/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isAdmin(request.resource.data.institutionId);
+      allow update: if isAdmin(resource.data.institutionId);
+      allow delete: if isAdmin(resource.data.institutionId);
+    }
+
+    // ============================================
+    // Teachers - Admin only for write
+    // ============================================
+    match /teachers/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isAdmin(request.resource.data.institutionId);
+      allow update: if isAdmin(resource.data.institutionId);
+      allow delete: if isAdmin(resource.data.institutionId);
+    }
+
+    // ============================================
+    // Message Templates - Admin only for write
+    // ============================================
+    match /message_templates/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isAdmin(request.resource.data.institutionId);
+      allow update, delete: if isAdmin(resource.data.institutionId);
+    }
+
+    // ============================================
+    // Message Logs - Admin only
+    // ============================================
+    match /message_logs/{docId} {
+      allow read: if isInstitutionMember(resource.data.institutionId);
+      allow create: if isAdmin(request.resource.data.institutionId);
+      allow update, delete: if isAdmin(resource.data.institutionId);
+    }
+  }
+}

@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowLeft, Save, Shield } from 'lucide-react';
 import Link from 'next/link';
+import { KVKK_VERSION } from '@/app/kvkk/page';
 
 export default function NewStudentPage() {
   const router = useRouter();
@@ -21,6 +23,7 @@ export default function NewStudentPage() {
     email: '',
     phone: '',
     notes: '',
+    kvkkConsent: false,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -34,6 +37,7 @@ export default function NewStudentPage() {
       newErrors.email = 'Geçerli bir email adresi giriniz';
     }
     if (!formData.phone.trim()) newErrors.phone = 'Telefon gereklidir';
+    if (!formData.kvkkConsent) newErrors.kvkkConsent = 'KVKK aydınlatma metnini onaylamanız gerekmektedir';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -53,6 +57,8 @@ export default function NewStudentPage() {
         email: formData.email.trim(),
         phone: formData.phone.trim(),
         notes: formData.notes.trim() || undefined,
+        kvkkConsentDate: new Date(),
+        kvkkConsentVersion: KVKK_VERSION,
       });
       router.push('/students');
     } catch (error) {
@@ -145,6 +151,50 @@ export default function NewStudentPage() {
                 placeholder="Öğrenci hakkında ek notlar..."
                 rows={3}
               />
+            </div>
+
+            {/* KVKK Onayı */}
+            <div className="space-y-3 pt-2">
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="flex items-start gap-3">
+                  <Shield className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="space-y-2 flex-1">
+                    <h4 className="font-medium text-sm">Kişisel Verilerin Korunması</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Kişisel verileriniz 6698 sayılı KVKK kapsamında işlenmektedir.
+                      Lütfen kayıt öncesi aydınlatma metnini okuyunuz.
+                    </p>
+                    <Link 
+                      href="/kvkk" 
+                      target="_blank"
+                      className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+                    >
+                      KVKK Aydınlatma Metnini Oku →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="kvkkConsent"
+                  checked={formData.kvkkConsent}
+                  onCheckedChange={(checked) => 
+                    setFormData({ ...formData, kvkkConsent: checked === true })
+                  }
+                  className="mt-1"
+                />
+                <Label 
+                  htmlFor="kvkkConsent" 
+                  className="text-sm font-normal cursor-pointer leading-relaxed"
+                >
+                  KVKK Aydınlatma Metnini okudum, kişisel verilerimin belirtilen amaçlarla 
+                  işlenmesini kabul ediyorum. <span className="text-destructive">*</span>
+                </Label>
+              </div>
+              {errors.kvkkConsent && (
+                <p className="text-sm text-destructive">{errors.kvkkConsent}</p>
+              )}
             </div>
 
             <div className="flex gap-3 pt-4">

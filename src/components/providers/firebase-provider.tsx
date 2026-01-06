@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { useAuthStore } from '@/lib/auth-store';
+import { Loader2 } from 'lucide-react';
 
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -17,20 +18,37 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, [initAuth]);
 
-  // Initialize Firestore data when authenticated
+  // Initialize Firestore data when authenticated and has institution
   useEffect(() => {
-    if (user && !initialized) {
-      initialize();
+    if (user?.institutionId && !initialized) {
+      initialize(user.institutionId);
     }
   }, [user, initialized, initialize]);
 
   // Handle redirects
   useEffect(() => {
     if (!authLoading) {
-      if (!user && pathname !== '/login') {
-        router.push('/login');
-      } else if (user && pathname === '/login') {
-        router.push('/');
+      if (!user) {
+        // Public pages that don't require auth
+        const publicPages = ['/login', '/register']; 
+        const isPublicPage = publicPages.some(p => pathname?.startsWith(p)) || pathname?.includes('token=');
+        
+        if (!isPublicPage) {
+          router.push('/login');
+        }
+      } else {
+        // User is authenticated
+        if (!user.institutionId) {
+          // New user, needs onboarding
+          if (pathname !== '/onboarding') {
+            router.push('/onboarding');
+          }
+        } else {
+          // Existing user with institution
+          if (pathname === '/login' || pathname === '/onboarding') {
+            router.push('/');
+          }
+        }
       }
     }
   }, [user, authLoading, pathname, router]);
@@ -40,36 +58,34 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
           <p className="text-muted-foreground">Yükleniyor...</p>
         </div>
       </div>
     );
   }
 
-  // If on login page, don't show main app structure
-  if (pathname === '/login') {
+  // Allow rendering for public pages or onboarding without data initialization
+  if (pathname === '/login' || pathname === '/onboarding' || pathname?.startsWith('/register')) {
     return <>{children}</>;
   }
 
-  // Not authenticated, don't render anything (will redirect)
+  // Not authenticated? (Should have redirected, but safe return)
   if (!user) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-muted-foreground">Yönlendiriliyor...</p>
-        </div>
-      </div>
-    );
+    return null; // Or loader
   }
 
-  // Show loading while fetching data
+  // Authenticated but no institution? (Should have redirected to onboarding)
+  if (!user.institutionId) {
+    return null; 
+  }
+
+  // Show loading while fetching data (Only if we have institutionId)
   if (!initialized || dataLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
           <p className="text-muted-foreground">Veriler yükleniyor...</p>
         </div>
       </div>

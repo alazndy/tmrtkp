@@ -1,265 +1,293 @@
+/**
+ * Unified App Store
+ * 
+ * This is the main store that combines all domain stores and provides
+ * backward compatibility with the original monolithic store API.
+ * 
+ * For new code, consider using individual stores directly:
+ * - useStudentStore
+ * - useCourseStore
+ * - useEnrollmentStore
+ * - useAttendanceStore
+ */
+
 import { create } from 'zustand';
 import { db } from './firebase';
 import {
   collection,
-  doc,
   getDocs,
   addDoc,
-  updateDoc,
   deleteDoc,
-  onSnapshot,
+  doc,
   Timestamp,
   query,
-  orderBy,
+  where,
 } from 'firebase/firestore';
-import { Student, Course, Enrollment, EnrollmentWithDetails, EnrollmentStatus } from '@/types';
-import { addDays, differenceInDays, isAfter } from 'date-fns';
-
-// Default Courses (will be seeded if collection is empty)
-const defaultCourses: Omit<Course, 'id'>[] = [
-  { name: 'A1.1', description: 'Başlangıç seviyesi - 1. modül', durationDays: 30, price: 2000 },
-  { name: 'A1.2', description: 'Başlangıç seviyesi - 2. modül', durationDays: 30, price: 2000 },
-  { name: 'A1.3', description: 'Başlangıç seviyesi - 3. modül', durationDays: 30, price: 2000 },
-  { name: 'A2.1', description: 'Temel seviye - 1. modül', durationDays: 30, price: 2000 },
-  { name: 'A2.2', description: 'Temel seviye - 2. modül', durationDays: 30, price: 2000 },
-  { name: 'A2.3', description: 'Temel seviye - 3. modül', durationDays: 30, price: 2000 },
-  { name: 'A2.4', description: 'Temel seviye - 4. modül', durationDays: 30, price: 2000 },
-  { name: 'A2.5', description: 'Temel seviye - 5. modül', durationDays: 30, price: 2000 },
-  { name: 'B1', description: 'Orta seviye', durationDays: 60, price: 4000 },
-  { name: 'B2', description: 'Orta üstü seviye', durationDays: 60, price: 4000 },
-  { name: 'C1', description: 'İleri seviye', durationDays: 90, price: 5500 },
-  { name: 'C2', description: 'Uzman seviye', durationDays: 90, price: 5500 },
-];
-
-// Firestore collection names
-const COLLECTIONS = {
-  students: 'students',
-  courses: 'courses',
-  enrollments: 'enrollments',
-};
-
-// Helper to convert Firestore Timestamp to Date
-const toDate = (timestamp: Timestamp | Date): Date => {
-  return timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
-};
+import { Student, Course, Enrollment, EnrollmentWithDetails, Attendance, AttendanceRecord } from '@/types';
+import { useStudentStore } from './stores/student-store';
+import { useCourseStore } from './stores/course-store';
+import { useEnrollmentStore } from './stores/enrollment-store';
+import { useAttendanceStore } from './stores/attendance-store';
+import { COLLECTIONS, defaultCoursesData, mockStudentsData } from './stores/constants';
 
 interface AppState {
+  // Core state
   students: Student[];
   courses: Course[];
   enrollments: Enrollment[];
+  attendance: Attendance[];
   loading: boolean;
   initialized: boolean;
+  institutionId: string | null;
 
-  // Initialize listeners
-  initialize: () => Promise<void>;
+  // Initialization
+  initialize: (institutionId: string) => Promise<void>;
+  reset: () => void;
 
-  // Student actions
-  addStudent: (student: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+  // Student operations
+  addStudent: (student: Omit<Student, 'id' | 'createdAt' | 'updatedAt' | 'institutionId'>) => Promise<string>;
   updateStudent: (id: string, data: Partial<Student>) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
   getStudent: (id: string) => Student | undefined;
 
-  // Course actions
-  addCourse: (course: Omit<Course, 'id'>) => Promise<string>;
+  // Course operations
+  addCourse: (course: Omit<Course, 'id' | 'institutionId'>) => Promise<string>;
   updateCourse: (id: string, data: Partial<Course>) => Promise<void>;
   deleteCourse: (id: string) => Promise<void>;
   getCourse: (id: string) => Course | undefined;
 
-  // Enrollment actions
+  // Enrollment operations
   enrollStudent: (studentId: string, courseId: string, startDate: Date, notes?: string) => Promise<string>;
   updateEnrollment: (id: string, data: Partial<Enrollment>) => Promise<void>;
   cancelEnrollment: (id: string) => Promise<void>;
   completeEnrollment: (id: string) => Promise<void>;
 
-  // Derived data
+  // Enrollment queries
   getEnrollmentsWithDetails: () => EnrollmentWithDetails[];
   getExpiringEnrollments: (daysThreshold?: number) => EnrollmentWithDetails[];
   getStudentEnrollments: (studentId: string) => EnrollmentWithDetails[];
+
+  // Attendance operations
+  saveAttendance: (courseId: string, date: Date, records: AttendanceRecord[], notes?: string) => Promise<string>;
+  getAttendanceByDate: (courseId: string, date: Date) => Attendance | undefined;
+  getCourseAttendanceHistory: (courseId: string) => Attendance[];
+  getStudentAttendanceStats: (studentId: string) => { present: number; absent: number; late: number; excused: number; total: number };
 }
 
-export const useAppStore = create<AppState>()((set, get) => ({
-  students: [],
-  courses: [],
-  enrollments: [],
-  loading: true,
-  initialized: false,
+export const useAppStore = create<AppState>()((set, get) => {
+  // Subscribe to individual stores and sync state
+  const syncState = () => {
+    const studentState = useStudentStore.getState();
+    const courseState = useCourseStore.getState();
+    const enrollmentState = useEnrollmentStore.getState();
+    const attendanceState = useAttendanceStore.getState();
 
-  initialize: async () => {
-    if (get().initialized) return;
+    set({
+      students: studentState.students,
+      courses: courseState.courses,
+      enrollments: enrollmentState.enrollments,
+      attendance: attendanceState.attendance,
+      loading: studentState.loading || courseState.loading || enrollmentState.loading || attendanceState.loading,
+    });
+  };
 
-    // Set up real-time listeners
-    const studentsRef = collection(db, COLLECTIONS.students);
-    const coursesRef = collection(db, COLLECTIONS.courses);
-    const enrollmentsRef = collection(db, COLLECTIONS.enrollments);
+  // Subscribe to store changes
+  useStudentStore.subscribe(syncState);
+  useCourseStore.subscribe(syncState);
+  useEnrollmentStore.subscribe(syncState);
+  useAttendanceStore.subscribe(syncState);
 
-    // Check if courses collection is empty, seed if needed
-    const coursesSnapshot = await getDocs(coursesRef);
-    if (coursesSnapshot.empty) {
-      for (const course of defaultCourses) {
-        await addDoc(coursesRef, course);
+  return {
+    students: [],
+    courses: [],
+    enrollments: [],
+    attendance: [],
+    loading: false,
+    initialized: false,
+    institutionId: null,
+
+    reset: () => {
+      set({
+        students: [],
+        courses: [],
+        enrollments: [],
+        attendance: [],
+        loading: false,
+        initialized: false,
+        institutionId: null,
+      });
+    },
+
+    initialize: async (institutionId: string) => {
+      if (get().initialized && get().institutionId === institutionId) return;
+
+      // Reset if changing institution
+      if (get().institutionId && get().institutionId !== institutionId) {
+        get().reset();
       }
-    }
 
-    // Students listener
-    onSnapshot(query(studentsRef, orderBy('createdAt', 'desc')), (snapshot) => {
-      const students = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: toDate(doc.data().createdAt),
-        updatedAt: toDate(doc.data().updatedAt),
-      })) as Student[];
-      set({ students });
-    });
+      set({ loading: true, institutionId });
 
-    // Courses listener
-    onSnapshot(coursesRef, (snapshot) => {
-      const courses = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Course[];
-      set({ courses });
-    });
+      // Check if we need to seed data
+      const coursesRef = collection(db, COLLECTIONS.courses);
+      const coursesQuery = query(coursesRef, where('institutionId', '==', institutionId));
+      const coursesSnapshot = await getDocs(coursesQuery);
 
-    // Enrollments listener
-    onSnapshot(query(enrollmentsRef, orderBy('createdAt', 'desc')), (snapshot) => {
-      const enrollments = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        startDate: toDate(doc.data().startDate),
-        endDate: toDate(doc.data().endDate),
-        createdAt: toDate(doc.data().createdAt),
-      })) as Enrollment[];
-      set({ enrollments, loading: false });
-    });
+      if (coursesSnapshot.empty) {
+        // Seed default courses
+        const studentsRef = collection(db, COLLECTIONS.students);
+        const enrollmentsRef = collection(db, COLLECTIONS.enrollments);
 
-    set({ initialized: true, loading: false });
-  },
-
-  // Student actions
-  addStudent: async (studentData) => {
-    const docRef = await addDoc(collection(db, COLLECTIONS.students), {
-      ...studentData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-    return docRef.id;
-  },
-
-  updateStudent: async (id, data) => {
-    await updateDoc(doc(db, COLLECTIONS.students, id), {
-      ...data,
-      updatedAt: Timestamp.now(),
-    });
-  },
-
-  deleteStudent: async (id) => {
-    // Delete student
-    await deleteDoc(doc(db, COLLECTIONS.students, id));
-    // Delete related enrollments
-    const enrollments = get().enrollments.filter((e) => e.studentId === id);
-    for (const enrollment of enrollments) {
-      await deleteDoc(doc(db, COLLECTIONS.enrollments, enrollment.id));
-    }
-  },
-
-  getStudent: (id) => get().students.find((s) => s.id === id),
-
-  // Course actions
-  addCourse: async (courseData) => {
-    const docRef = await addDoc(collection(db, COLLECTIONS.courses), courseData);
-    return docRef.id;
-  },
-
-  updateCourse: async (id, data) => {
-    await updateDoc(doc(db, COLLECTIONS.courses, id), data);
-  },
-
-  deleteCourse: async (id) => {
-    await deleteDoc(doc(db, COLLECTIONS.courses, id));
-  },
-
-  getCourse: (id) => get().courses.find((c) => c.id === id),
-
-  // Enrollment actions
-  enrollStudent: async (studentId, courseId, startDate, notes) => {
-    const course = get().getCourse(courseId);
-    if (!course) throw new Error('Course not found');
-
-    const endDate = addDays(startDate, course.durationDays);
-
-    const docRef = await addDoc(collection(db, COLLECTIONS.enrollments), {
-      studentId,
-      courseId,
-      startDate: Timestamp.fromDate(startDate),
-      endDate: Timestamp.fromDate(endDate),
-      status: 'active',
-      notes: notes || null,
-      createdAt: Timestamp.now(),
-    });
-    return docRef.id;
-  },
-
-  updateEnrollment: async (id, data) => {
-    await updateDoc(doc(db, COLLECTIONS.enrollments, id), data);
-  },
-
-  cancelEnrollment: async (id) => {
-    await get().updateEnrollment(id, { status: 'cancelled' });
-  },
-
-  completeEnrollment: async (id) => {
-    await get().updateEnrollment(id, { status: 'completed' });
-  },
-
-  // Derived data
-  getEnrollmentsWithDetails: () => {
-    const { students, courses, enrollments } = get();
-    const today = new Date();
-
-    return enrollments
-      .map((enrollment) => {
-        const student = students.find((s) => s.id === enrollment.studentId);
-        const course = courses.find((c) => c.id === enrollment.courseId);
-
-        if (!student || !course) return null;
-
-        const endDate = new Date(enrollment.endDate);
-        const daysRemaining = differenceInDays(endDate, today);
-
-        let status: EnrollmentStatus = enrollment.status;
-        if (status === 'active' && isAfter(today, endDate)) {
-          status = 'expired';
+        const createdCourseIds: string[] = [];
+        for (const data of defaultCoursesData) {
+          const docRef = await addDoc(coursesRef, { ...data, institutionId });
+          createdCourseIds.push(docRef.id);
         }
 
-        return {
-          ...enrollment,
-          endDate,
-          startDate: new Date(enrollment.startDate),
-          student,
-          course,
-          daysRemaining,
-          isExpiringSoon: daysRemaining > 0 && daysRemaining <= 7 && status === 'active',
-          status,
-        };
-      })
-      .filter(Boolean) as EnrollmentWithDetails[];
-  },
+        // Seed mock students
+        const createdStudentIds: string[] = [];
+        for (const student of mockStudentsData) {
+          const docRef = await addDoc(studentsRef, {
+            ...student,
+            institutionId,
+            notes: 'Demo öğrenci',
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          });
+          createdStudentIds.push(docRef.id);
+        }
 
-  getExpiringEnrollments: (daysThreshold = 7) => {
-    return get()
-      .getEnrollmentsWithDetails()
-      .filter(
-        (e) =>
-          e.status === 'active' &&
-          e.daysRemaining > 0 &&
-          e.daysRemaining <= daysThreshold
-      )
-      .sort((a, b) => a.daysRemaining - b.daysRemaining);
-  },
+        // Enroll students in courses
+        const now = new Date();
+        for (let i = 0; i < createdStudentIds.length; i++) {
+          const courseIndex = i % Math.min(3, createdCourseIds.length);
+          const courseId = createdCourseIds[courseIndex];
+          const durationDays = defaultCoursesData[courseIndex]?.durationDays || 30;
 
-  getStudentEnrollments: (studentId) => {
-    return get()
-      .getEnrollmentsWithDetails()
-      .filter((e) => e.studentId === studentId);
-  },
-}));
+          await addDoc(enrollmentsRef, {
+            institutionId,
+            studentId: createdStudentIds[i],
+            courseId,
+            startDate: Timestamp.fromDate(now),
+            endDate: Timestamp.fromDate(new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)),
+            status: 'active',
+            notes: null,
+            createdAt: Timestamp.now(),
+          });
+        }
+      }
+
+      // Initialize all stores
+      useStudentStore.getState().initialize(institutionId);
+      useCourseStore.getState().initialize(institutionId);
+      useEnrollmentStore.getState().initialize(institutionId);
+      useAttendanceStore.getState().initialize(institutionId);
+
+      set({ initialized: true, loading: false });
+    },
+
+    // Student operations - delegate to student store
+    addStudent: async (studentData) => {
+      const { institutionId } = get();
+      if (!institutionId) throw new Error('Institution ID missing');
+      return useStudentStore.getState().addStudent(institutionId, studentData);
+    },
+
+    updateStudent: async (id, data) => {
+      return useStudentStore.getState().updateStudent(id, data);
+    },
+
+    deleteStudent: async (id) => {
+      // Also delete related enrollments
+      const enrollments = get().enrollments.filter((e) => e.studentId === id);
+      for (const enrollment of enrollments) {
+        await deleteDoc(doc(db, COLLECTIONS.enrollments, enrollment.id));
+      }
+      return useStudentStore.getState().deleteStudent(id);
+    },
+
+    getStudent: (id) => useStudentStore.getState().getStudent(id),
+
+    // Course operations - delegate to course store
+    addCourse: async (courseData) => {
+      const { institutionId } = get();
+      if (!institutionId) throw new Error('Institution ID missing');
+      return useCourseStore.getState().addCourse(institutionId, courseData);
+    },
+
+    updateCourse: async (id, data) => {
+      return useCourseStore.getState().updateCourse(id, data);
+    },
+
+    deleteCourse: async (id) => {
+      return useCourseStore.getState().deleteCourse(id);
+    },
+
+    getCourse: (id) => useCourseStore.getState().getCourse(id),
+
+    // Enrollment operations - delegate to enrollment store
+    enrollStudent: async (studentId, courseId, startDate, notes) => {
+      const { institutionId } = get();
+      if (!institutionId) throw new Error('Institution ID missing');
+      
+      const course = get().getCourse(courseId);
+      if (!course) throw new Error('Course not found');
+
+      return useEnrollmentStore.getState().enrollStudent(
+        institutionId,
+        studentId,
+        courseId,
+        course.durationDays,
+        startDate,
+        notes
+      );
+    },
+
+    updateEnrollment: async (id, data) => {
+      return useEnrollmentStore.getState().updateEnrollment(id, data);
+    },
+
+    cancelEnrollment: async (id) => {
+      return useEnrollmentStore.getState().cancelEnrollment(id);
+    },
+
+    completeEnrollment: async (id) => {
+      return useEnrollmentStore.getState().completeEnrollment(id);
+    },
+
+    // Enrollment queries
+    getEnrollmentsWithDetails: () => {
+      const { students, courses } = get();
+      return useEnrollmentStore.getState().getEnrollmentsWithDetails(students, courses);
+    },
+
+    getExpiringEnrollments: (daysThreshold = 7) => {
+      const { students, courses } = get();
+      return useEnrollmentStore.getState().getExpiringEnrollments(students, courses, daysThreshold);
+    },
+
+    getStudentEnrollments: (studentId) => {
+      const { students, courses } = get();
+      return useEnrollmentStore.getState().getStudentEnrollments(students, courses, studentId);
+    },
+
+    // Attendance operations - delegate to attendance store
+    saveAttendance: async (courseId, date, records, notes) => {
+      const { institutionId } = get();
+      if (!institutionId) throw new Error('Institution ID missing');
+      return useAttendanceStore.getState().saveAttendance(institutionId, courseId, date, records, notes);
+    },
+
+    getAttendanceByDate: (courseId, date) => {
+      return useAttendanceStore.getState().getAttendanceByDate(courseId, date);
+    },
+
+    getCourseAttendanceHistory: (courseId) => {
+      return useAttendanceStore.getState().getCourseAttendanceHistory(courseId);
+    },
+
+    getStudentAttendanceStats: (studentId) => {
+      return useAttendanceStore.getState().getStudentAttendanceStats(studentId);
+    },
+  };
+});

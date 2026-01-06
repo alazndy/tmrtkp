@@ -1,16 +1,8 @@
 # Cisem Öğrenci Takip
 
-Dil kursu öğrencilerinin kurs kayıtlarını takip eden ve kurs bitiş tarihlerinde uyarı veren web uygulaması.
+Modern, güvenli ve production-ready dil kursu yönetim sistemi.
 
-## Teknolojiler
-
-- **Framework:** Next.js 16 (App Router)
-- **Styling:** Tailwind CSS 4
-- **Components:** Shadcn/UI
-- **State Management:** Zustand (localStorage persist)
-- **Date Handling:** date-fns (Türkçe locale)
-
-## Başlangıç
+## 🚀 Hızlı Başlangıç
 
 ```bash
 pnpm install
@@ -19,50 +11,111 @@ pnpm dev
 
 Uygulama: http://localhost:3000
 
-## Özellikler
+## ✨ Özellikler
 
-### Dashboard
+| Modül             | Özellikler                              |
+| ----------------- | --------------------------------------- |
+| **Dashboard**     | İstatistikler, uyarılar, hızlı eylemler |
+| **Öğrenciler**    | CRUD, KVKK rıza takibi, arama           |
+| **Kurslar**       | A1-C2 seviyeleri, kategori grupları     |
+| **Kayıtlar**      | Otomatik bitiş hesaplama, durum takibi  |
+| **Yoklama**       | Günlük kayıt, istatistikler             |
+| **Ödemeler**      | Durum takibi, hatırlatmalar             |
+| **Mesajlar**      | SMS, WhatsApp, Email entegrasyonu       |
+| **Multi-Tenancy** | Kurum izolasyonu, rol bazlı erişim      |
 
-- Toplam öğrenci, aktif kayıt, süresi yaklaşan ve dolmuş istatistikleri
-- Süresi 7 gün içinde dolacak kayıtlar için uyarı kartları
+## 🛠️ Teknoloji Stack
 
-### Öğrenci Yönetimi
+- **Frontend:** Next.js 16 (App Router), React 19, Tailwind CSS 4
+- **UI:** Shadcn/UI, Radix Primitives, Lucide Icons
+- **State:** Zustand 5 (modüler store)
+- **Backend:** Firebase Auth + Firestore
+- **External:** Twilio (SMS/WhatsApp), Resend (Email)
 
-- Öğrenci ekleme, düzenleme, silme
-- Arama ve filtreleme
-
-### Kurs Kayıtları
-
-- Öğrenciyi kursa kaydetme
-- Takvimden başlangıç tarihi seçimi
-- Otomatik bitiş tarihi hesaplama
-- Kayıt tamamlama/iptal
-
-### Kurslar
-
-- A1, A2, B1, B2, C1 seviye kursları
-- Süre ve fiyat bilgileri
-
-## Klasör Yapısı
+## 📁 Proje Yapısı
 
 ```
 src/
-├── app/
-│   ├── page.tsx          # Dashboard
-│   ├── layout.tsx        # Ana layout + Sidebar
-│   ├── students/         # Öğrenci sayfaları
-│   ├── courses/          # Kurs listesi
-│   └── enrollments/      # Kayıt sayfaları
+├── app/                    # Next.js App Router pages
+│   ├── _components/        # Dashboard components
+│   ├── api/notifications/  # SMS, WhatsApp, Email API
+│   └── [pages]/           # Feature pages
 ├── components/
-│   ├── layout/           # Sidebar
-│   └── ui/               # Shadcn components
+│   ├── layout/            # Sidebar, header
+│   ├── providers/         # Firebase provider
+│   └── ui/                # Shadcn components
 ├── lib/
-│   ├── store.ts          # Zustand store
-│   └── utils.ts          # Utility functions
-└── types/
-    └── index.ts          # TypeScript types
+│   ├── stores/            # Modüler Zustand stores
+│   ├── firebase.ts        # Firebase client config
+│   ├── firebase-admin.ts  # Firebase Admin SDK
+│   ├── auth-middleware.ts # API auth utilities
+│   ├── rate-limit.ts      # Rate limiting
+│   ├── logger.ts          # Centralized logging
+│   └── env.ts             # Environment validation
+└── types/                 # TypeScript definitions
 ```
 
-## Git Repository
+## 🔐 Güvenlik
 
-Repo URL: [TODO: Buraya repo URL'sini ekleyin]
+- ✅ Firebase Auth + Custom Claims
+- ✅ Firestore Rules (multi-tenant isolation)
+- ✅ API Rate Limiting (5-10 req/min)
+- ✅ Zod Input Validation
+- ✅ Security Headers (X-Frame-Options, CSP)
+- ✅ Token Expiry Validation
+
+## 🚢 Deployment
+
+### Firebase App Hosting
+
+```bash
+# Build
+pnpm build
+
+# Deploy
+firebase deploy --only hosting
+```
+
+### Environment Variables
+
+Gerekli env vars için [docs/ENV_SETUP.md](docs/ENV_SETUP.md) dosyasına bakın.
+
+### CI/CD
+
+GitHub Actions workflow `.github/workflows/ci.yml` dosyasında:
+
+- Lint & Type Check
+- Security Audit
+- Build
+- Auto Deploy (main branch)
+
+## 📋 Development
+
+```bash
+# Install
+pnpm install
+
+# Development
+pnpm dev
+
+# Build
+pnpm build
+
+# Type check
+pnpm tsc --noEmit
+
+# Lint
+pnpm lint
+
+# Security audit
+pnpm audit
+```
+
+## 📄 Docs
+
+- [Environment Setup](docs/ENV_SETUP.md)
+- [Firestore Rules](firestore.rules)
+
+## 🔗 Repository
+
+https://github.com/alazndy/cisem_ogrenci_takip
