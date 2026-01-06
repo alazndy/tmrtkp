@@ -118,4 +118,4 @@ pnpm audit
 
 ## 🔗 Repository
 
-https://github.com/alazndy/cisem_ogrenci_takip
+https://github.com/alazndy/tmrtkp
